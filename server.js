@@ -1,123 +1,81 @@
-/**
-* This is the main Node.js server script for your project
-* Check out the two endpoints this back-end API provides in fastify.get and fastify.post below
-*/
+require('dotenv').config();
 
-const path = require("path");
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const { TikTokConnectionWrapper, getGlobalConnectionCount } = require('./connectionWrapper');
 
-// Require the fastify framework and instantiate it
-const fastify = require("fastify")({
-  // Set this to true for detailed logging:
-  logger: false
-});
+const app = express();
+const httpServer = createServer(app);
 
-// ADD FAVORITES ARRAY VARIABLE FROM TODO HERE
-
-
-// Setup our static files
-fastify.register(require("fastify-static"), {
-  root: path.join(__dirname, "public"),
-  prefix: "/" // optional: default '/'
-});
-
-// fastify-formbody lets us parse incoming forms
-fastify.register(require("fastify-formbody"));
-
-// point-of-view is a templating manager for fastify
-fastify.register(require("point-of-view"), {
-  engine: {
-    handlebars: require("handlebars")
-  }
-});
-
-// Load and parse SEO data
-const seo = require("./src/seo.json");
-if (seo.url === "glitch-default") {
-  seo.url = `https://${process.env.PROJECT_DOMAIN}.glitch.me`;
-}
-
-/**
-* Our home page route
-*
-* Returns src/pages/index.hbs with data built into it
-*/
-fastify.get("/", function(request, reply) {
-  
-  // params is an object we'll pass to our handlebars template
-  let params = { seo: seo };
-  
-  // If someone clicked the option for a random color it'll be passed in the querystring
-  if (request.query.randomize) {
-    
-    // We need to load our color data file, pick one at random, and add it to the params
-    const colors = require("./src/colors.json");
-    const allColors = Object.keys(colors);
-    let currentColor = allColors[(allColors.length * Math.random()) << 0];
-    
-    // Add the color properties to the params object
-    params = {
-      color: colors[currentColor],
-      colorError: null,
-      seo: seo
-    };
-  }
-  
-  // The Handlebars code will be able to access the parameter values and build them into the page
-  reply.view("/src/pages/index.hbs", params);
-});
-
-/**
-* Our POST route to handle and react to form submissions 
-*
-* Accepts body data indicating the user choice
-*/
-fastify.post("/", function(request, reply) {
-  
-  // Build the params object to pass to the template
-  let params = { seo: seo };
-  
-  // If the user submitted a color through the form it'll be passed here in the request body
-  let color = request.body.color;
-  
-  // If it's not empty, let's try to find the color
-  if (color) {
-    // ADD CODE FROM TODO HERE TO SAVE SUBMITTED FAVORITES
-    
-    // Load our color data file
-    const colors = require("./src/colors.json");
-    
-    // Take our form submission, remove whitespace, and convert to lowercase
-    color = color.toLowerCase().replace(/\s/g, "");
-    
-    // Now we see if that color is a key in our colors object
-    if (colors[color]) {
-      
-      // Found one!
-      params = {
-        color: colors[color],
-        colorError: null,
-        seo: seo
-      };
-    } else {
-      
-      // No luck! Return the user value as the error property
-      params = {
-        colorError: request.body.color,
-        seo: seo
-      };
+// Enable cross origin resource sharing
+const io = new Server(httpServer, {
+    cors: {
+        origin: '*'
     }
-  }
-  
-  // The Handlebars template will use the parameter values to update the page with the chosen color
-  reply.view("/src/pages/index.hbs", params);
 });
 
-// Run the server and report out to the logs
-fastify.listen(process.env.PORT, '0.0.0.0', function(err, address) {
-  if (err) {
-    fastify.log.error(err);
-    process.exit(1);
-  }
-  console.log(`Your app is listening on ${address}`);
-  fastify.log.info(`server listening on ${address}`);
+io.on('connection', (socket) => {
+    let tiktokConnectionWrapper;
+
+    socket.on('setUniqueId', (uniqueId, options) => {
+
+        // Prohibit the client from specifying these options (for security reasons)
+        if (typeof options === 'object') {
+            delete options.requestOptions;
+            delete options.websocketOptions;
+        }
+
+        // Is the client already connected to a stream? => Disconnect
+        if (tiktokConnectionWrapper) {
+            tiktokConnectionWrapper.disconnect();
+        }
+
+        // Connect to the given username (uniqueId)
+        try {
+            tiktokConnectionWrapper = new TikTokConnectionWrapper(uniqueId, options, true);
+            tiktokConnectionWrapper.connect();            
+        } catch(err) {
+            socket.emit('disconnected', err.toString());
+            return;
+        }
+
+        // Redirect wrapper control events once
+        tiktokConnectionWrapper.once('connected', state => socket.emit('tiktokConnected', state));
+        tiktokConnectionWrapper.once('disconnected', reason => socket.emit('tiktokDisconnected', reason));
+
+        // Notify client when stream ends
+        tiktokConnectionWrapper.connection.on('streamEnd', () => socket.emit('streamEnd'));
+
+        // Redirect message events
+        tiktokConnectionWrapper.connection.on('roomUser', msg => socket.emit('roomUser', msg));
+        tiktokConnectionWrapper.connection.on('member', msg => socket.emit('member', msg));
+        tiktokConnectionWrapper.connection.on('chat', msg => socket.emit('chat', msg));
+        tiktokConnectionWrapper.connection.on('gift', msg => socket.emit('gift', msg));
+        tiktokConnectionWrapper.connection.on('social', msg => socket.emit('social', msg));
+        tiktokConnectionWrapper.connection.on('like', msg => socket.emit('like', msg));
+        tiktokConnectionWrapper.connection.on('questionNew', msg => socket.emit('questionNew', msg));
+        tiktokConnectionWrapper.connection.on('linkMicBattle', msg => socket.emit('linkMicBattle', msg));
+        tiktokConnectionWrapper.connection.on('linkMicArmies', msg => socket.emit('linkMicArmies', msg));
+        tiktokConnectionWrapper.connection.on('liveIntro', msg => socket.emit('liveIntro', msg));
+    });
+
+    socket.on('disconnect', () => {
+        if(tiktokConnectionWrapper) {
+            tiktokConnectionWrapper.disconnect();
+        }
+    });
 });
+
+// Emit global connection statistics
+setInterval(() => {
+    io.emit('statistic', { globalConnectionCount: getGlobalConnectionCount() });
+}, 5000)
+
+// Serve frontend files
+app.use(express.static('public'));
+
+// Start http listener
+const port = process.env.PORT || 8081;
+httpServer.listen(port);
+console.info(`Server running! Please visit http://localhost:${port}`);
