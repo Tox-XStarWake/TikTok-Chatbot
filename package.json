@@ -1,8 +1,21 @@
 {
+  "name" : "tiktok-chatbot",
+  "main" : "server.js",
+  "version": "1.0.0",
+  "description": "Application to Read and React to Tiktok Live Chat",
+  "repository": {
+	  "type": "git",
+	  "url": "https://github.com/Tox-XStarWake/TikTok-Chatbot"
+  },
+
   "dependencies": {
     "dotenv": "^16.0.0",
-    "express": "^4.17.2",
-    "socket.io": "^4.4.1",
+    "express": "^4.17.3",
+    "socket.io": "^4.5.0",
     "tiktok-live-connector": "^0.9.20"
+  },
+
+  "scripts": {
+    "start": "node server.js"
   }
 }
