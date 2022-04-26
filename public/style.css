@@ -78,3 +78,13 @@ a {
     width: 50px;
     margin-right: 10px;
 }
+
+.dark-mode {
+    background-color: black;
+    color: white;
+  }
+  
+  .light-mode {
+    background-color: white;
+    color: black;
+  }
