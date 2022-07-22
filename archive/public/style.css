@@ -53,14 +53,10 @@ a {
     text-align: center;
 }
 
-.chatcontainer, .giftcontainer, .eventcontainer {
+.chatcontainer, .giftcontainer {
     overflow-y: scroll;
     height: calc(100vh - 240px);
     word-wrap: break-word;
-}
-
-.eventcontainer {
-    height: calc(100vh - 90px);
 }
 
 .chatcontainer {
@@ -82,3 +78,13 @@ a {
     width: 50px;
     margin-right: 10px;
 }
+
+.dark-mode {
+    background-color: black;
+    color: white;
+  }
+  
+  .light-mode {
+    background-color: white;
+    color: black;
+  }

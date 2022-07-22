@@ -4,7 +4,6 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { TikTokConnectionWrapper, getGlobalConnectionCount } = require('./connectionWrapper');
-const { clientBlocked } = require('./limiter');
 
 const app = express();
 const httpServer = createServer(app);
@@ -16,50 +15,28 @@ const io = new Server(httpServer, {
     }
 });
 
-if (!process.env.WEBCAST_COOKIES) {
-    console.warn('Missing WEBCAST_COOKIES in .env - Please provide your current session cookies (sessionid + ttwid)');
-}
-
 io.on('connection', (socket) => {
     let tiktokConnectionWrapper;
-
-    console.info('New connection from origin', socket.handshake.headers['origin'] || socket.handshake.headers['referer']);
 
     socket.on('setUniqueId', (uniqueId, options) => {
 
         // Prohibit the client from specifying these options (for security reasons)
-        if (typeof options === 'object' && options) {
+        if (typeof options === 'object') {
             delete options.requestOptions;
             delete options.websocketOptions;
-        } else {
-            options = {};
         }
-
-        // Add session cookies from .env
-        const headers = {
-            'Cookie': process.env.WEBCAST_COOKIES
-        }
-        
-        options.requestHeaders = headers;
-        options.websocketHeaders = headers;
 
         // Is the client already connected to a stream? => Disconnect
         if (tiktokConnectionWrapper) {
             tiktokConnectionWrapper.disconnect();
         }
 
-        // Check if rate limit exceeded
-        if (process.env.ENABLE_RATE_LIMIT && clientBlocked(io, socket)) {
-            socket.emit('tiktokDisconnected', 'You have opened too many connections or made too many connection requests. Please reduce the number of connections/requests or host your own server instance. The connections are limited to avoid that the server IP gets blocked by TokTok.');
-            return;
-        }
-
         // Connect to the given username (uniqueId)
         try {
-            tiktokConnectionWrapper = new TikTokConnectionWrapper(uniqueId, options, true, process.env.WEBCAST_COOKIES);
-            tiktokConnectionWrapper.connect();
-        } catch (err) {
-            socket.emit('tiktokDisconnected', err.toString());
+            tiktokConnectionWrapper = new TikTokConnectionWrapper(uniqueId, options, true);
+            tiktokConnectionWrapper.connect();            
+        } catch(err) {
+            socket.emit('disconnected', err.toString());
             return;
         }
 
@@ -81,13 +58,10 @@ io.on('connection', (socket) => {
         tiktokConnectionWrapper.connection.on('linkMicBattle', msg => socket.emit('linkMicBattle', msg));
         tiktokConnectionWrapper.connection.on('linkMicArmies', msg => socket.emit('linkMicArmies', msg));
         tiktokConnectionWrapper.connection.on('liveIntro', msg => socket.emit('liveIntro', msg));
-        tiktokConnectionWrapper.connection.on('emote', msg => socket.emit('emote', msg));
-        tiktokConnectionWrapper.connection.on('envelope', msg => socket.emit('envelope', msg));
-        tiktokConnectionWrapper.connection.on('subscribe', msg => socket.emit('subscribe', msg));
     });
 
     socket.on('disconnect', () => {
-        if (tiktokConnectionWrapper) {
+        if(tiktokConnectionWrapper) {
             tiktokConnectionWrapper.disconnect();
         }
     });
