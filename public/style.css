@@ -86,9 +86,9 @@ a {
 .dark-mode {
     background-color: black;
     color: white;
-  }
+}
   
-  .light-mode {
+.light-mode {
     background-color: white;
     color: black;
-  }
+}
